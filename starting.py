@@ -81,10 +81,27 @@ def extract_number(s: str):
     return m.group(0) if m else None
 
 
+def _extract_boxed(text: str) -> str | None:
+    #fix extraction to find total {} instead of stopping on first one and returning nothing
+    start = text.rfind("\\boxed{")
+    if start == -1:
+        return None
+    inner_start = start + len("\\boxed{")
+    open_braces = 1
+    for i in range(inner_start, len(text)):
+        if text[i] == "{":
+            open_braces += 1
+        elif text[i] == "}":
+            open_braces -= 1
+            if open_braces == 0:
+                return text[inner_start:i]
+    return None
+
+
 def _strip_answer_markers(text: str) -> str:
-    boxed = re.findall(r"\\boxed\{([^{}]*)\}", text)
-    if boxed:
-        text = boxed[-1]
+    boxed = _extract_boxed(text)
+    if boxed is not None:
+        text = boxed
     text = re.sub(r"^\**\s*(final answer|answer)\s*[:\-]?\s*", "", text, flags=re.IGNORECASE)
     return text.strip().strip("*`\"' .,")
 
