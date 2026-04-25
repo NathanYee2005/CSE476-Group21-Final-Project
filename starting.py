@@ -89,7 +89,7 @@ def _strip_answer_markers(text: str) -> str:
     return text.strip().strip("*`\"' .,")
 
 
-def self_consistency(prompt, n=5):
+def self_consistency(prompt, n=5, _escalate=True):
     raw_answers = []
     for _ in range(n):
         result = call_model_chat_completions(prompt, temperature=0.7)
@@ -106,6 +106,12 @@ def self_consistency(prompt, n=5):
         return raw_answers[0] if raw_answers else ""
 
     winner = max(set(valid), key=valid.count)
+    winner_count = valid.count(winner)
+
+    #escalate to reflection if the winner did not get over 50% votes
+    if _escalate and winner_count * 2 <= len(valid):
+        return reflection(prompt, _escalate=False)["answer"]
+
     for raw, norm in zip(raw_answers, normalized):
         if norm == winner:
             return raw
@@ -159,9 +165,10 @@ def cot(question, temperature=0.0):
     return {"reasoning": text, "answer": answer}
 
 
-def reflection(question, max_retries=2):
+def reflection(question, max_retries=2, _escalate=True):
     attempt = cot(question)
     history = []
+    converged = False
 
     for _ in range(max_retries):
         critique_prompt = (
@@ -174,6 +181,7 @@ def reflection(question, max_retries=2):
         critique = (call_model_chat_completions(critique_prompt).get("text") or "").strip()
 
         if critique.upper().startswith("CORRECT"):
+            converged = True
             break
 
         history.append(critique)
@@ -183,6 +191,11 @@ def reflection(question, max_retries=2):
             "\n\nTry again, avoiding those issues."
         )
         attempt = cot(retry_prompt)
+
+    #escalate to self_consistency if reflection does not converge on to a correct answer
+    if _escalate and not converged:
+        voted = self_consistency(question, n=3, _escalate=False)
+        return {"answer": voted, "reasoning": attempt["reasoning"], "critiques": history}
 
     return {"answer": attempt["answer"], "reasoning": attempt["reasoning"], "critiques": history}
 
@@ -346,20 +359,16 @@ def least_to_most(question: str, max_steps: int = 5):
 
 def classify(question):
     system = (
-        "Classify into one label: "
-        "math (arithmetic with single answer), "
-        "tool (needs computation or code), "
-        "react (needs external lookup), "
-        "decompose (independent subproblems), "
-        "multistep (ordered sequential steps), "
-        "refine (open-ended quality matters), "
-        "reflect (tricky, may need verification), "
+        "Classify the question into one label: "
+        "compute (math, calculation, or code execution needed), "
+        "decompose (problem has multiple steps or independent sub-questions), "
+        "verify (factual or open-ended; correctness should be double-checked), "
         "simple (everything else). "
         "Reply with only the label."
     )
     result = call_model_chat_completions(question, system=system)
     label = (result.get("text") or "").strip().lower()
-    valid = {"math", "tool", "react", "decompose", "multistep", "refine", "reflect", "simple"}
+    valid = {"compute", "decompose", "verify", "simple"}
     if label not in valid:
         label = "simple"
     return label
@@ -367,20 +376,11 @@ def classify(question):
 
 def agent(question):
     label = classify(question)
-    if label == "math":
-        return self_consistency(question)
-    if label == "tool":
+    if label == "compute":
         return tool_augmented(question)
-    if label == "react":
-        tools = {"calc": lambda x: str(eval(x))}
-        return react(question, tools)
     if label == "decompose":
-        return decomposition(question)
-    if label == "multistep":
         return least_to_most(question)
-    if label == "refine":
-        return self_refine(question)
-    if label == "reflect":
+    if label == "verify":
         return reflection(question)["answer"]
     return cot(question)["answer"]
 
