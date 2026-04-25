@@ -158,6 +158,35 @@ def decomposition(prompt, max_parts=4):
     )
     return (final.get("text") or "").strip()
 
+
+def tool_augmented(prompt, tools=None, max_steps=4):
+    system = "Reason step by step. To compute something write 'TOOL: python[code]'. When done write 'FINAL: answer'"
+    history = prompt
+
+    for _ in range(max_steps):
+        result = call_model_chat_completions(history, system=system, max_tokens=512)
+        text = (result.get("text") or "").strip()
+        history = history + "\n" + text
+
+        if "FINAL:" in text:
+            return text.split("FINAL:")[-1].strip()
+
+        match = re.search(r"TOOL:\s*python\[(.*?)\]", text, re.DOTALL)
+        if match:
+            try:
+                buf = {}
+                exec(match.group(1), {"math": __import__("math")}, buf)  # noqa: S102
+                obs = buf.get("result", "OK")
+            except Exception as e:
+                obs = f"Error: {e}"
+            history = history + f"\nObservation: {obs}"
+
+    return call_model_chat_completions(
+        history + "\nGive only the final answer.",
+        system="Reply with only the final answer—no explanation."
+    ).get("text", "").strip()
+
+
 def self_refine(question: str, num_refine: int = 1):
     r1 = call_model_chat_completions(
         system="You are a helpful assistant.",
