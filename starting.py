@@ -1,4 +1,4 @@
-import os, json, textwrap, re, time
+import os, json, textwrap, re, time, math
 import requests
 
 API_KEY  = os.getenv("OPENAI_API_KEY", "CREATE FROM Voyager Portal")
@@ -87,6 +87,19 @@ def _strip_answer_markers(text: str) -> str:
         text = boxed[-1]
     text = re.sub(r"^\**\s*(final answer|answer)\s*[:\-]?\s*", "", text, flags=re.IGNORECASE)
     return text.strip().strip("*`\"' .,")
+
+#runs python code
+def _tool_python(code: str) -> str:
+    scope = {"math": math}
+    exec(code, scope)
+    return str(scope.get("result", "OK"))
+
+
+#evaluates simple math expressions
+def _tool_calc(expr: str) -> str:
+    return str(eval(expr, {"math": math}))
+
+TOOLS = {"python": _tool_python, "calc": _tool_calc}
 
 
 def self_consistency(prompt, n=5, _escalate=True):
@@ -238,7 +251,9 @@ def decomposition(prompt, max_parts=4):
 
 
 def tool_augmented(prompt, tools=None, max_steps=4):
-    system = "Reason step by step. To compute something write 'TOOL: python[code]'. When done write 'FINAL: answer'"
+    tools = tools or TOOLS
+    tool_list = ", ".join(sorted(tools.keys()))
+    system = f"Reason step by step. Available tools: {tool_list}. Call one with 'TOOL: <name>[input]'. When done write 'FINAL: answer'"
     history = prompt
 
     for _ in range(max_steps):
@@ -249,20 +264,22 @@ def tool_augmented(prompt, tools=None, max_steps=4):
         if "FINAL:" in text:
             return text.split("FINAL:")[-1].strip()
 
-        match = re.search(r"TOOL:\s*python\[(.*?)\]", text, re.DOTALL)
+        match = re.search(r"TOOL:\s*(\w+)\[(.*?)\]", text, re.DOTALL)
         if match:
+            name = match.group(1)
+            arg = match.group(2)
             try:
-                buf = {}
-                exec(match.group(1), {"math": __import__("math")}, buf)  # noqa: S102
-                obs = buf.get("result", "OK")
+                obs = tools[name](arg)
             except Exception as e:
                 obs = f"Error: {e}"
             history = history + f"\nObservation: {obs}"
 
-    return call_model_chat_completions(
-        history + "\nGive only the final answer.",
+    #re ask without history for max tokens is not a problem
+    final = call_model_chat_completions(
+        f"Question: {prompt}\n\nGive ONLY the final answer.",
         system="Reply with only the final answer—no explanation."
-    ).get("text", "").strip()
+    ).get("text") or ""
+    return _strip_answer_markers(final)
 
 
 def self_refine(question: str, num_refine: int = 1):
@@ -323,8 +340,9 @@ def least_to_most(question: str, max_steps: int = 5):
         raise RuntimeError(f"API error: {r1['error']}")
 
     parts = re.findall(r"^\s*\d+[\.\)]\s*(.+)", r1["text"] or "", re.MULTILINE)
-    if not parts:
-        parts = [(r1["text"] or "").strip()]
+    #pass to decomposition if no sequential sub problems
+    if len(parts) < 2:
+        return decomposition(question, max_parts=max_steps)
 
     context = ""
 
