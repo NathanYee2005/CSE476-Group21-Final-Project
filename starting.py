@@ -81,6 +81,48 @@ def react(prompt, tools, max_steps=5):
     return history
 
 
+def cot(question, temperature=0.0):
+    system = (
+        "Think step by step. Show your reasoning, then on the final line write:\n"
+        "Final answer: <your answer>"
+    )
+    result = call_model_chat_completions(question, system=system, temperature=temperature)
+    text = (result.get("text") or "").strip()
+    if "Final answer:" in text:
+        answer = text.rsplit("Final answer:", 1)[-1].strip()
+    else:
+        answer = text
+    return {"reasoning": text, "answer": answer}
+
+
+def reflection(question, max_retries=2):
+    attempt = cot(question)
+    history = []
+
+    for _ in range(max_retries):
+        critique_prompt = (
+            f"Question: {question}\n\n"
+            f"My reasoning: {attempt['reasoning']}\n"
+            f"My answer: {attempt['answer']}\n\n"
+            "If this answer is correct, reply with exactly: CORRECT.\n"
+            "Otherwise, in one sentence, say what is wrong."
+        )
+        critique = (call_model_chat_completions(critique_prompt).get("text") or "").strip()
+
+        if critique.upper().startswith("CORRECT"):
+            break
+
+        history.append(critique)
+        retry_prompt = (
+            f"{question}\n\n"
+            "Previous attempts had these issues:\n- " + "\n- ".join(history) +
+            "\n\nTry again, avoiding those issues."
+        )
+        attempt = cot(retry_prompt)
+
+    return {"answer": attempt["answer"], "reasoning": attempt["reasoning"], "critiques": history}
+
+
 def process_json(input_path, output_path):
     with open(input_path, "r", encoding="utf-8") as fp:
         questions = json.load(fp)
