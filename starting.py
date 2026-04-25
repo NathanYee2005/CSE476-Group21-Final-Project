@@ -129,8 +129,7 @@ def process_json(input_path, output_path):
 
     answers = []
     for q in questions:
-        result = call_model_chat_completions(q["input"])
-        ans = (result.get("text") or "").strip()
+        ans = agent(q["input"])
         answers.append({"output": ans})
 
     with open(output_path, "w", encoding="utf-8") as fp:
@@ -279,6 +278,47 @@ def least_to_most(question: str, max_steps: int = 5):
 
     return r3["text"].strip()
 
+def classify(question):
+    system = (
+        "Classify into one label: "
+        "math (arithmetic with single answer), "
+        "tool (needs computation or code), "
+        "react (needs external lookup), "
+        "decompose (independent subproblems), "
+        "multistep (ordered sequential steps), "
+        "refine (open-ended quality matters), "
+        "reflect (tricky, may need verification), "
+        "simple (everything else). "
+        "Reply with only the label."
+    )
+    result = call_model_chat_completions(question, system=system)
+    label = (result.get("text") or "").strip().lower()
+    valid = {"math", "tool", "react", "decompose", "multistep", "refine", "reflect", "simple"}
+    if label not in valid:
+        label = "simple"
+    return label
+
+
+def agent(question):
+    label = classify(question)
+    if label == "math":
+        return self_consistency(question)
+    if label == "tool":
+        return tool_augmented(question)
+    if label == "react":
+        tools = {"calc": lambda x: str(eval(x))}
+        return react(question, tools)
+    if label == "decompose":
+        return decomposition(question)
+    if label == "multistep":
+        return least_to_most(question)
+    if label == "refine":
+        return self_refine(question)
+    if label == "reflect":
+        return reflection(question)["answer"]
+    return cot(question)["answer"]
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
@@ -288,8 +328,7 @@ def main():
     args = parser.parse_args()
 
     if args.text is not None:
-        result = call_model_chat_completions(args.text)
-        print((result.get("text") or "").strip())
+        print(agent(args.text))
     else:
         process_json(args.json_path, args.out)
 
