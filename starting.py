@@ -96,6 +96,27 @@ def process_json(input_path, output_path):
     print(f"wrote {len(answers)} answers to {output_path}!")
 
 
+def decomposition(prompt, max_parts=4):
+    split = call_model_chat_completions(
+        f"Break into {max_parts} numbered subproblems:\n{prompt}",
+        system="Output only a numbered list of subproblems."
+    )
+    parts = re.findall(r"^\s*\d+[\.\)]\s*(.+)", (split.get("text") or ""), re.MULTILINE)
+    if not parts:
+        return call_model_chat_completions(prompt).get("text", "").strip()
+
+    context = ""
+    for part in parts:
+        res = call_model_chat_completions(f"Context:\n{context}\nSubproblem: {part}")
+        context += f"- {part}: {(res.get('text') or '').strip()}\n"
+
+    final = call_model_chat_completions(
+        f"Problem: {prompt}\n\nSubproblem answers:\n{context}\nFinal answer:",
+        system="Reply with only the final answer—no explanation."
+    )
+    return (final.get("text") or "").strip()
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
