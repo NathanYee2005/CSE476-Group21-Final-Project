@@ -113,7 +113,11 @@ def self_consistency(prompt, n=5):
 
 
 def react(prompt, tools, max_steps=5):
-    system = "Reply with one line: 'Action: tool[input]' or 'Final Answer: ...'"
+    tool_names = ", ".join(sorted(tools.keys())) or "(none)"
+    system = (
+        f"Available tools: {tool_names}. On each step reply with one line: "
+        f"'Action: <tool>[input]' or 'Final Answer: <answer>'."
+    )
     history = prompt
 
     for _ in range(max_steps):
@@ -128,10 +132,17 @@ def react(prompt, tools, max_steps=5):
         if match:
             name = match.group(1)
             arg = match.group(2)
-            obs = tools[name](arg)
+            try:
+                obs = tools[name](arg)
+            except Exception as e:
+                obs = f"Error: {e}"
             history = history + "\nObservation: " + str(obs)
 
-    return history
+    final = call_model_chat_completions(
+        history + "\nGive only the final answer.",
+        system="Reply with only the final answer—no explanation."
+    )
+    return (final.get("text") or "").strip()
 
 
 def cot(question, temperature=0.0):
