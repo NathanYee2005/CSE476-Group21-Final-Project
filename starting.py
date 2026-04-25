@@ -49,6 +49,20 @@ def call_model_chat_completions(prompt: str,
         return {"ok": False, "text": None, "raw": None, "status": -1, "error": str(e), "headers": {}}
 
 
+def cot(question, temperature=0.0):
+    system = (
+        "Think step by step. Show your reasoning, then on the final line write:\n"
+        "Final answer: <your answer>"
+    )
+    result = call_model_chat_completions(question, system=system, temperature=temperature)
+    text = (result.get("text") or "").strip()
+    if "Final answer:" in text:
+        answer = text.rsplit("Final answer:", 1)[-1].strip()
+    else:
+        answer = text
+    return {"reasoning": text, "answer": answer}
+
+
 def process_json(input_path, output_path):
     with open(input_path, "r", encoding="utf-8") as fp:
         questions = json.load(fp)
