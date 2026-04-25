@@ -207,6 +207,48 @@ def self_refine(question: str, num_refine: int = 1):
         
     return answer
 
+def least_to_most(question: str, max_steps: int = 5):
+    r1 = call_model_chat_completions(
+        system="Output only a numbered list of subproblems.",
+        prompt=f"Break this into at most {max_steps} ordered subproblems: {question}"
+    )
+    if not r1["ok"]:
+        raise RuntimeError(f"API error: {r1['error']}")
+
+    parts = re.findall(r"^\s*\d+[\.\)]\s*(.+)", r1["text"] or "", re.MULTILINE)
+    if not parts:
+        parts = [(r1["text"] or "").strip()]
+
+    context = ""
+
+    for part in parts[:max_steps]:
+        r2 = call_model_chat_completions(
+            system="You are a helpful assistant.",
+            prompt=f"""
+                    {question}
+                    Solved so far:
+                    {context or "None"}
+                    {part}
+                    Solve only this step.
+                    """
+        )
+        if not r2["ok"]:
+            raise RuntimeError(f"API error: {r2['error']}")
+
+        context += f"- {part}: {r2['text'].strip()}\n"
+
+    r3 = call_model_chat_completions(
+        system="You are a helpful assistant. Reply with only the final answer.",
+        prompt=f"""
+            {question}
+            {context}
+            Give the final answer.
+            """
+        )
+    if not r3["ok"]:
+        raise RuntimeError(f"API error: {r3['error']}")
+
+    return r3["text"].strip()
 
 def main():
     import argparse
