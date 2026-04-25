@@ -158,6 +158,55 @@ def decomposition(prompt, max_parts=4):
     )
     return (final.get("text") or "").strip()
 
+def self_refine(question: str, num_refine: int = 1):
+    r1 = call_model_chat_completions(
+        system="You are a helpful assistant.",
+        prompt=f"Answer the question: {question}"
+    )
+    if not r1["ok"]:
+        raise RuntimeError(f"API error: {r1['error']}")
+    
+    answer = r1["text"].strip()
+
+    for i in range(num_refine):
+        r2 = call_model_chat_completions(
+            system="You are a critical reviewer",
+            prompt=f"""
+                Question:
+                {question}
+
+                Answer:
+                {answer}
+
+                Critique the answer. Point out anything that is wrong or unclear.
+                """
+            )
+        if not r2["ok"]:
+            raise RuntimeError(f"API error: {r2['error']}")
+        
+        critique = r2["text"].strip()
+
+        r3 = call_model_chat_completions(
+            system="You are a helpful assistant. You make a new final answer considering the previous answer and critique.",
+            prompt=f"""
+            Question:
+            {question}
+
+            Answer:
+            {answer}
+
+            Critique:
+            {critique}
+
+            Create a new final answer. Reply with only a single word or number.
+            """
+        )
+        if not r3["ok"]:
+            raise RuntimeError(f"API error: {r3['error']}")
+        answer = r3["text"].strip()
+        
+    return answer
+
 
 def main():
     import argparse
