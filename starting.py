@@ -49,6 +49,38 @@ def call_model_chat_completions(prompt: str,
         return {"ok": False, "text": None, "raw": None, "status": -1, "error": str(e), "headers": {}}
 
 
+def self_consistency(prompt, n=5):
+    answers = []
+    for _ in range(n):
+        result = call_model_chat_completions(prompt, temperature=0.7)
+        text = (result.get("text") or "").strip()
+        answers.append(text)
+
+    return max(set(answers), key=answers.count)
+
+
+def react(prompt, tools, max_steps=5):
+    system = "Reply with one line: 'Action: tool[input]' or 'Final Answer: ...'"
+    history = prompt
+
+    for _ in range(max_steps):
+        result = call_model_chat_completions(history, system=system)
+        text = (result.get("text") or "").strip()
+        history = history + "\n" + text
+
+        if "Final Answer:" in text:
+            return text.split("Final Answer:")[-1].strip()
+
+        match = re.search(r"Action:\s*(\w+)\[(.*?)\]", text)
+        if match:
+            name = match.group(1)
+            arg = match.group(2)
+            obs = tools[name](arg)
+            history = history + "\nObservation: " + str(obs)
+
+    return history
+
+
 def cot(question, temperature=0.0):
     system = (
         "Think step by step. Show your reasoning, then on the final line write:\n"
