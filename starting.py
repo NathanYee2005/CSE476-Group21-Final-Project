@@ -31,7 +31,7 @@ def call_model_chat_completions(prompt: str,
             {"role": "user",   "content": prompt}
         ],
         "temperature": temperature,
-        "max_tokens": 128,
+        "max_tokens": 2048,
     }
 
     try:
@@ -54,14 +54,62 @@ def call_model_chat_completions(prompt: str,
         return {"ok": False, "text": None, "raw": None, "status": -1, "error": str(e), "headers": {}}
 
 
+# %% Simple normalization and evaluation helpers
+def normalize_text(s: str) -> str:
+    s = (s or "").strip().lower()
+    # Remove surrounding punctuation and extra whitespace
+    s = re.sub(r"[^\w\s\-']", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+
+    # Map common synonyms used in these tests
+    synonyms = {
+        "unchanged": "stay the same",
+        "no change": "stay the same",
+        "same": "stay the same",
+        "second place": "second",
+        "2nd": "second",
+        "first place": "first",
+        "third place": "third",
+    }
+    return synonyms.get(s, s)
+
+def extract_number(s: str):
+    # Returns first number occurrence as string if found, else None
+    if not s:
+        return None
+    m = re.search(r"[-+]?\d+(\.\d+)?", s)
+    return m.group(0) if m else None
+
+
+def _strip_answer_markers(text: str) -> str:
+    boxed = re.findall(r"\\boxed\{([^{}]*)\}", text)
+    if boxed:
+        text = boxed[-1]
+    text = re.sub(r"^\**\s*(final answer|answer)\s*[:\-]?\s*", "", text, flags=re.IGNORECASE)
+    return text.strip().strip("*`\"' .,")
+
+
 def self_consistency(prompt, n=5):
-    answers = []
+    raw_answers = []
     for _ in range(n):
         result = call_model_chat_completions(prompt, temperature=0.7)
-        text = (result.get("text") or "").strip()
-        answers.append(text)
+        raw_answers.append((result.get("text") or "").strip())
 
-    return max(set(answers), key=answers.count)
+    normalized = []
+    for answer in raw_answers:
+        stripped = _strip_answer_markers(answer)
+        number = extract_number(stripped)
+        normalized.append(number if number is not None else normalize_text(stripped))
+
+    valid = [v for v in normalized if v]
+    if not valid:
+        return raw_answers[0] if raw_answers else ""
+
+    winner = max(set(valid), key=valid.count)
+    for raw, norm in zip(raw_answers, normalized):
+        if norm == winner:
+            return raw
+    return raw_answers[0]
 
 
 def react(prompt, tools, max_steps=5):
