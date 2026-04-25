@@ -163,7 +163,7 @@ def tool_augmented(prompt, tools=None, max_steps=4):
     history = prompt
 
     for _ in range(max_steps):
-        result = call_model_chat_completions(history, system=system, max_tokens=512)
+        result = call_model_chat_completions(history, system=system)
         text = (result.get("text") or "").strip()
         history = history + "\n" + text
 
