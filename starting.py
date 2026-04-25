@@ -51,3 +51,37 @@ def call_model_chat_completions(prompt: str,
             return {"ok": False, "text": None, "raw": None, "status": status, "error": str(err_text), "headers": hdrs}
     except requests.RequestException as e:
         return {"ok": False, "text": None, "raw": None, "status": -1, "error": str(e), "headers": {}}
+
+
+def process_json(input_path, output_path):
+    with open(input_path, "r", encoding="utf-8") as fp:
+        questions = json.load(fp)
+
+    answers = []
+    for q in questions:
+        result = call_model_chat_completions(q["input"])
+        ans = (result.get("text") or "").strip()
+        answers.append({"output": ans})
+
+    with open(output_path, "w", encoding="utf-8") as fp:
+        json.dump(answers, fp, ensure_ascii=False, indent=2)
+    print(f"wrote {len(answers)} answers to {output_path}!")
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("json_path", nargs="?", default=None)
+    parser.add_argument("--text", default=None)
+    parser.add_argument("--out", default="answers.json")
+    args = parser.parse_args()
+
+    if args.text is not None:
+        result = call_model_chat_completions(args.text)
+        print((result.get("text") or "").strip())
+    else:
+        process_json(args.json_path, args.out)
+
+
+if __name__ == "__main__":
+    main()
