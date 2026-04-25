@@ -392,7 +392,23 @@ def classify(question):
     return label
 
 
+def planning(question):
+    system = (
+        "You output a block-stacking plan in PDDL action syntax. "
+        "One action per line, in parentheses, e.g. (unstack blue red), (stack blue yellow), "
+        "(pick-up red), (put-down blue). Use lowercase action names (pick-up, put-down, stack, unstack) "
+        "and lowercase block colors as arguments. "
+        "Output only the parenthesized actions for the final [PLAN], no prose, no [PLAN]/[PLAN END] markers."
+    )
+    result = call_model_chat_completions(question, system=system)
+    text = (result.get("text") or "").strip()
+    actions = re.findall(r"([^)]*)", text)
+    return "\n".join(actions)
+
+
 def agent(question):
+    if "[PLAN]" in question:
+        return planning(question)
     label = classify(question)
     if label == "compute":
         return tool_augmented(question)
