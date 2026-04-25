@@ -1,7 +1,3 @@
-# %% Minimal setup
-# If needed (uncomment in a notebook):
-# !pip install requests python-dotenv
-
 import os, json, textwrap, re, time
 import requests
 
