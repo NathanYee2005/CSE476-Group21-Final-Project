@@ -2,14 +2,19 @@ import os, json, textwrap, re, time
 import requests
 
 API_KEY  = os.getenv("OPENAI_API_KEY", "CREATE FROM Voyager Portal")
-API_BASE = os.getenv("API_BASE", "https://openai.rc.asu.edu/v1")  
-MODEL    = os.getenv("MODEL_NAME", "qwen3-30b-a3b-instruct-2507")              
+API_BASE = os.getenv("API_BASE", "https://openai.rc.asu.edu/v1")
+MODEL    = os.getenv("MODEL_NAME", "qwen3-30b-a3b-instruct-2507")
+
+LLM_CALLS = 0
+
 
 def call_model_chat_completions(prompt: str,
                                 system: str = "You are a helpful assistant. Reply with only the final answer—no explanation.",
                                 model: str = MODEL,
                                 temperature: float = 0.0,
                                 timeout: int = 60) -> dict:
+    global LLM_CALLS
+    LLM_CALLS += 1
     """
     Calls an OpenAI-style /v1/chat/completions endpoint and returns:
     { 'ok': bool, 'text': str or None, 'raw': dict or None, 'status': int, 'error': str or None, 'headers': dict }
@@ -129,7 +134,9 @@ def process_json(input_path, output_path):
 
     answers = []
     for q in questions:
+        before = LLM_CALLS
         ans = agent(q["input"])
+        print(f"total llm calls: {LLM_CALLS - before}")
         answers.append({"output": ans})
 
     with open(output_path, "w", encoding="utf-8") as fp:
@@ -328,7 +335,9 @@ def main():
     args = parser.parse_args()
 
     if args.text is not None:
+        before = LLM_CALLS
         print(agent(args.text))
+        print(f"total llm calls: {LLM_CALLS - before}")
     else:
         process_json(args.json_path, args.out)
 
