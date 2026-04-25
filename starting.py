@@ -49,6 +49,16 @@ def call_model_chat_completions(prompt: str,
         return {"ok": False, "text": None, "raw": None, "status": -1, "error": str(e), "headers": {}}
 
 
+def self_consistency(prompt, n=5):
+    answers = []
+    for _ in range(n):
+        result = call_model_chat_completions(prompt, temperature=0.7)
+        text = (result.get("text") or "").strip()
+        answers.append(text)
+
+    return max(set(answers), key=answers.count)
+
+
 def process_json(input_path, output_path):
     with open(input_path, "r", encoding="utf-8") as fp:
         questions = json.load(fp)
