@@ -1,4 +1,5 @@
 import os, json, textwrap, re, time, math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
 API_KEY  = os.getenv("OPENAI_API_KEY", "CREATE FROM Voyager Portal")
@@ -230,20 +231,31 @@ def reflection(question, max_retries=2, _escalate=True):
     return {"answer": attempt["answer"], "reasoning": attempt["reasoning"], "critiques": history}
 
 
-def process_json(input_path, output_path):
+def process_json(input_path, output_path, workers: int = 4):
     with open(input_path, "r", encoding="utf-8") as fp:
         questions = json.load(fp)
 
-    answers = []
-    for q in questions:
-        before = LLM_CALLS
-        ans = agent(q["input"])
-        print(f"total llm calls: {LLM_CALLS - before}")
-        answers.append({"output": ans})
+    answers: list[dict | None] = [None] * len(questions)
+    before = LLM_CALLS
+    t0 = time.time()
+
+    def work(i, q):
+        try:
+            return i, {"output": agent(q["input"])}
+        except Exception as e:
+            return i, {"output": None, "error": repr(e)}
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = [ex.submit(work, i, q) for i, q in enumerate(questions)]
+        for done, fut in enumerate(as_completed(futures), 1):
+            i, result = fut.result()
+            answers[i] = result
+            print(f"[{done}/{len(questions)}] done (idx {i})")
 
     with open(output_path, "w", encoding="utf-8") as fp:
         json.dump(answers, fp, ensure_ascii=False, indent=2)
     print(f"wrote {len(answers)} answers to {output_path}!")
+    print(f"total llm calls: {LLM_CALLS - before} | wall time: {time.time() - t0:.1f}s")
 
 
 def decomposition(prompt, max_parts=4):
@@ -442,6 +454,7 @@ def main():
     parser.add_argument("json_path", nargs="?", default=None)
     parser.add_argument("--text", default=None)
     parser.add_argument("--out", default="answers.json")
+    parser.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
 
     if args.text is not None:
@@ -449,7 +462,7 @@ def main():
         print(agent(args.text))
         print(f"total llm calls: {LLM_CALLS - before}")
     else:
-        process_json(args.json_path, args.out)
+        process_json(args.json_path, args.out, workers=args.workers)
 
 
 if __name__ == "__main__":
