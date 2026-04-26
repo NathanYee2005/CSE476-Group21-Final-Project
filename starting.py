@@ -190,10 +190,13 @@ def cot(question, temperature=0.0):
         "Think step by step. Show your reasoning, then on the final line write:\n"
         "Final answer: <your answer>"
     )
+    if re.search(r"^\s*\d+\)\s+\S", question, re.MULTILINE):
+        system += "\nIf the question lists numbered options, your answer must be the EXACT verbatim text of one option — not its number, and without any 'N)' prefix."
     result = call_model_chat_completions(question, system=system, temperature=temperature)
     text = (result.get("text") or "").strip()
     after_marker = re.split(r"\b(?:final\s+answer|answer)\s*[:\-]", text, flags=re.IGNORECASE)[-1].strip()
     answer = _strip_answer_markers(after_marker)
+    answer = re.sub(r"^\s*\d+\)\s*", "", answer)
     return {"reasoning": text, "answer": answer}
 
 
@@ -295,7 +298,7 @@ def tool_augmented(prompt, tools=None, max_steps=4):
         history = history + "\n" + text
 
         if "FINAL:" in text:
-            return text.split("FINAL:")[-1].strip()
+            return _strip_answer_markers(text.split("FINAL:")[-1].strip())
 
         match = re.search(r"TOOL:\s*(\w+)\[(.*?)\]", text, re.DOTALL)
         if match:
@@ -435,7 +438,7 @@ def planning(question):
     )
     result = call_model_chat_completions(question, system=system)
     text = (result.get("text") or "").strip()
-    actions = re.findall(r"([^)]*)", text)
+    actions = re.findall(r"\([^)]*\)", text)
     return "\n".join(actions)
 
 
