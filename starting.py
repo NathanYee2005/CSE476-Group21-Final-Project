@@ -1,6 +1,9 @@
 import os, json, textwrap, re, time, math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 API_KEY  = os.getenv("OPENAI_API_KEY", "CREATE FROM Voyager Portal")
 API_BASE = os.getenv("API_BASE", "https://openai.rc.asu.edu/v1")
@@ -250,7 +253,10 @@ def process_json(input_path, output_path, workers: int = 4):
         for done, fut in enumerate(as_completed(futures), 1):
             i, result = fut.result()
             answers[i] = result
-            print(f"[{done}/{len(questions)}] done (idx {i})")
+            if "error" in result:
+                print(f"[{done}/{len(questions)}] FAILED (idx {i}): {result['error']}")
+            else:
+                print(f"[{done}/{len(questions)}] done (idx {i})")
 
     with open(output_path, "w", encoding="utf-8") as fp:
         json.dump(answers, fp, ensure_ascii=False, indent=2)
