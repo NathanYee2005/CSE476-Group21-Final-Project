@@ -192,10 +192,8 @@ def cot(question, temperature=0.0):
     )
     result = call_model_chat_completions(question, system=system, temperature=temperature)
     text = (result.get("text") or "").strip()
-    if "Final answer:" in text:
-        answer = text.rsplit("Final answer:", 1)[-1].strip()
-    else:
-        answer = text
+    after_marker = re.split(r"\b(?:final\s+answer|answer)\s*[:\-]", text, flags=re.IGNORECASE)[-1].strip()
+    answer = _strip_answer_markers(after_marker)
     return {"reasoning": text, "answer": answer}
 
 
