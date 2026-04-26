@@ -106,8 +106,25 @@ def _strip_answer_markers(text: str) -> str:
     boxed = _extract_boxed(text)
     if boxed is not None:
         text = boxed
-    text = re.sub(r"^\**\s*(final answer|answer)\s*[:\-]?\s*", "", text, flags=re.IGNORECASE)
+    parts = re.split(r"\b(?:final\s+answer|answer)\s*[:\-]", text, flags=re.IGNORECASE)
+    if len(parts) > 1:
+        text = parts[-1]
     return text.strip().strip("*`\"' .,")
+
+
+def _extract_final(question: str, reasoning: str) -> str:
+    if not reasoning:
+        return ""
+    #dont trim if reasoning is short could be correct answer
+    if "\n" not in reasoning.strip() and len(reasoning) < 120:
+        return _strip_answer_markers(reasoning)
+    result = call_model_chat_completions(
+        f"Question: {question}\n\nReasoning: {reasoning}\n\nExtract ONLY the final answer.",
+        system="Reply with only the final answer—no explanation, no units unless required, no markdown."
+    )
+    extracted = (result.get("text") or "").strip()
+    answer = _strip_answer_markers(extracted) or _strip_answer_markers(reasoning)
+    return answer[:4999]
 
 #runs python code
 def _tool_python(code: str) -> str:
@@ -397,6 +414,8 @@ def self_refine(question: str, num_refine: int = 1, draft: str | None = None):
         reasoning = r3["text"].strip()
         answer = _strip_answer_markers(reasoning)
 
+    if "\n" in answer or len(answer) > 120:
+        answer = _extract_final(question, answer)
     return answer
 
 def least_to_most(question: str, max_steps: int = 5):
@@ -441,7 +460,10 @@ def least_to_most(question: str, max_steps: int = 5):
     if not r3["ok"]:
         raise RuntimeError(f"API error: {r3['error']}")
 
-    return r3["text"].strip()
+    answer = _strip_answer_markers(r3["text"].strip())
+    if "\n" in answer or len(answer) > 120:
+        answer = _extract_final(question, answer)
+    return answer
 
 def classify(question):
     system = (
