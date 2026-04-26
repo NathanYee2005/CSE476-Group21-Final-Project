@@ -140,9 +140,15 @@ def _tool_wiki(query: str) -> str:
 TOOLS = {"python": _tool_python, "calc": _tool_calc, "wiki": _tool_wiki}
 
 
-def self_consistency(prompt, n=5, _escalate=True):
+def self_consistency(prompt, n=5, _escalate=True, draft: str | None = None):
     raw_answers = []
-    for _ in range(n):
+    if draft is not None:
+        raw_answers.append(draft)
+        sample_count = max(0, n - 1)
+    else:
+        sample_count = n
+
+    for _ in range(sample_count):
         result = call_model_chat_completions(prompt, temperature=0.7)
         raw_answers.append((result.get("text") or "").strip())
 
@@ -162,6 +168,10 @@ def self_consistency(prompt, n=5, _escalate=True):
     #escalate to reflection if the winner did not get over 50% votes
     if _escalate and winner_count * 2 <= len(valid):
         return reflection(prompt, _escalate=False)["answer"]
+
+    #if tie break just return draft
+    if draft is not None and normalized[0] and valid.count(normalized[0]) == winner_count:
+        return draft
 
     for raw, norm in zip(raw_answers, normalized):
         if norm == winner:
@@ -335,16 +345,20 @@ def tool_augmented(prompt, tools=None, max_steps=4):
     return _strip_answer_markers(final)
 
 
-def self_refine(question: str, num_refine: int = 1):
-    r1 = call_model_chat_completions(
-        system="You are a helpful assistant.",
-        prompt=f"Answer the question: {question}"
-    )
-    if not r1["ok"]:
-        raise RuntimeError(f"API error: {r1['error']}")
+def self_refine(question: str, num_refine: int = 1, draft: str | None = None):
+    if draft is not None:
+        answer = draft.strip()
+        reasoning = answer
+    else:
+        r1 = call_model_chat_completions(
+            system="You are a helpful assistant.",
+            prompt=f"Answer the question: {question}"
+        )
+        if not r1["ok"]:
+            raise RuntimeError(f"API error: {r1['error']}")
 
-    answer = r1["text"].strip()
-    reasoning = answer
+        answer = r1["text"].strip()
+        reasoning = answer
 
     for i in range(num_refine):
         r2 = call_model_chat_completions(
@@ -469,7 +483,7 @@ def agent(question):
 
     if label == "compute":
         draft = tool_augmented(question)
-        return self_consistency(f"{question}\n\nTool-assisted draft: {draft}\nReturn only the final answer.")
+        return self_consistency(question, draft=draft)
 
     if label == "decompose":
         return least_to_most(question)
@@ -479,7 +493,7 @@ def agent(question):
         return reflection(f"{question}\n\nResearched draft: {draft}")["answer"]
 
     drafted = cot(question)
-    return self_refine(f"{question}\n\nInitial answer: {drafted['answer']}")
+    return self_refine(question, draft=drafted["answer"])
 
 
 def main():
