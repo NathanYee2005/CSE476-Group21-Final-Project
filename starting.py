@@ -120,7 +120,24 @@ def _tool_python(code: str) -> str:
 def _tool_calc(expr: str) -> str:
     return str(eval(expr, {"math": math}))
 
-TOOLS = {"python": _tool_python, "calc": _tool_calc}
+_WIKI_HEADERS = {"User-Agent": "CSE476-Group21-Project/0.1 (educational use)"}
+
+def _tool_wiki(query: str) -> str:
+    try:
+        r = requests.get("https://en.wikipedia.org/w/api.php", params={
+            "action": "query", "format": "json", "prop": "extracts",
+            "exintro": True, "explaintext": True, "redirects": 1,
+            "generator": "search", "gsrsearch": query.strip(), "gsrlimit": 1,
+        }, headers=_WIKI_HEADERS, timeout=8).json()
+        for page in r.get("query", {}).get("pages", {}).values():
+            extract = (page.get("extract") or "").strip()
+            if extract:
+                return f"{page.get('title')}: {extract[:600]}"
+        return "no results"
+    except Exception as e:
+        return f"wiki error: {e}"
+
+TOOLS = {"python": _tool_python, "calc": _tool_calc, "wiki": _tool_wiki}
 
 
 def self_consistency(prompt, n=5, _escalate=True):
@@ -414,10 +431,11 @@ def least_to_most(question: str, max_steps: int = 5):
 def classify(question):
     system = (
         "Classify the question into one label: "
-        "compute (math, calculation, or code execution needed), "
-        "decompose (problem has multiple steps or independent sub-questions), "
-        "verify (factual or open-ended; correctness should be double-checked), "
-        "simple (everything else). "
+        "compute (math, arithmetic, or any numeric calculation), "
+        "decompose (multi-step or multi-part questions, or planning problems), "
+        "verify (any factual question about real-world people, places, events, dates, organizations, "
+        "works, or definitions — anything answerable by looking up a fact), "
+        "simple (subjective, hypothetical, conversational, or opinion questions that do not require fact lookup). "
         "Reply with only the label."
     )
     result = call_model_chat_completions(question, system=system)
@@ -451,7 +469,7 @@ def agent(question):
     if label == "decompose":
         return least_to_most(question)
     if label == "verify":
-        return reflection(question)["answer"]
+        return react(question, TOOLS)
     return cot(question)["answer"]
 
 
