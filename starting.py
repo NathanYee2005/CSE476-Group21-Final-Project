@@ -464,14 +464,22 @@ def planning(question):
 def agent(question):
     if "[PLAN]" in question:
         return planning(question)
+
     label = classify(question)
+
     if label == "compute":
-        return tool_augmented(question)
+        draft = tool_augmented(question)
+        return self_consistency(f"{question}\n\nTool-assisted draft: {draft}\nReturn only the final answer.")
+
     if label == "decompose":
         return least_to_most(question)
+
     if label == "verify":
-        return react(question, TOOLS)
-    return self_refine(question)
+        draft = react(question, TOOLS)
+        return reflection(f"{question}\n\nResearched draft: {draft}")["answer"]
+
+    drafted = cot(question)
+    return self_refine(f"{question}\n\nInitial answer: {drafted['answer']}")
 
 
 def main():
