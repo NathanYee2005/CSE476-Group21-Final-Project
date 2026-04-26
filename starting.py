@@ -342,8 +342,9 @@ def self_refine(question: str, num_refine: int = 1):
     )
     if not r1["ok"]:
         raise RuntimeError(f"API error: {r1['error']}")
-    
+
     answer = r1["text"].strip()
+    reasoning = answer
 
     for i in range(num_refine):
         r2 = call_model_chat_completions(
@@ -360,7 +361,6 @@ def self_refine(question: str, num_refine: int = 1):
             )
         if not r2["ok"]:
             raise RuntimeError(f"API error: {r2['error']}")
-        
         critique = r2["text"].strip()
 
         r3 = call_model_chat_completions(
@@ -375,14 +375,15 @@ def self_refine(question: str, num_refine: int = 1):
             Critique:
             {critique}
 
-            Create a new final answer. Reply with only a single word or number.
+            Create a new final answer. Reply with a sentence.
             """
         )
         if not r3["ok"]:
             raise RuntimeError(f"API error: {r3['error']}")
-        answer = r3["text"].strip()
-        
-    return answer
+        reasoning = r3["text"].strip()
+        answer = _strip_answer_markers(reasoning)
+
+    return {"reasoning": reasoning, "answer": answer}
 
 def least_to_most(question: str, max_steps: int = 5):
     r1 = call_model_chat_completions(
