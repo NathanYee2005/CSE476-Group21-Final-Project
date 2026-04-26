@@ -115,9 +115,6 @@ def _strip_answer_markers(text: str) -> str:
 def _extract_final(question: str, reasoning: str) -> str:
     if not reasoning:
         return ""
-    #dont trim if reasoning is short could be correct answer
-    if "\n" not in reasoning.strip() and len(reasoning) < 120:
-        return _strip_answer_markers(reasoning)
     result = call_model_chat_completions(
         f"Question: {question}\n\nReasoning: {reasoning}\n\nExtract ONLY the final answer.",
         system="Reply with only the final answer—no explanation, no units unless required, no markdown."
@@ -414,8 +411,6 @@ def self_refine(question: str, num_refine: int = 1, draft: str | None = None):
         reasoning = r3["text"].strip()
         answer = _strip_answer_markers(reasoning)
 
-    if "\n" in answer or len(answer) > 120:
-        answer = _extract_final(question, answer)
     return answer
 
 def least_to_most(question: str, max_steps: int = 5):
@@ -460,10 +455,7 @@ def least_to_most(question: str, max_steps: int = 5):
     if not r3["ok"]:
         raise RuntimeError(f"API error: {r3['error']}")
 
-    answer = _strip_answer_markers(r3["text"].strip())
-    if "\n" in answer or len(answer) > 120:
-        answer = _extract_final(question, answer)
-    return answer
+    return _strip_answer_markers(r3["text"].strip())
 
 def classify(question):
     system = (
@@ -505,17 +497,20 @@ def agent(question):
 
     if label == "compute":
         draft = tool_augmented(question)
-        return self_consistency(question, draft=draft)
-
-    if label == "decompose":
-        return least_to_most(question)
-
-    if label == "verify":
+        answer = self_consistency(question, draft=draft)
+    elif label == "decompose":
+        answer = least_to_most(question)
+    elif label == "verify":
         draft = react(question, TOOLS)
-        return reflection(f"{question}\n\nResearched draft: {draft}")["answer"]
+        answer = reflection(f"{question}\n\nResearched draft: {draft}")["answer"]
+    else:
+        drafted = cot(question)
+        answer = self_refine(question, draft=drafted["answer"])
 
-    drafted = cot(question)
-    return self_refine(question, draft=drafted["answer"])
+    answer = _strip_answer_markers(answer)
+    if "\n" in answer or len(answer) > 120:
+        answer = _extract_final(question, answer)
+    return answer
 
 
 def main():
