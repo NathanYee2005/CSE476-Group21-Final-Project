@@ -356,7 +356,7 @@ def self_refine(question: str, num_refine: int = 1):
                 Answer:
                 {answer}
 
-                Critique the answer. Point out anything that is wrong or unclear.
+                Critique the answer. Point out anything that is wrong or unclear.Take a deep breath.
                 """
             )
         if not r2["ok"]:
@@ -364,7 +364,7 @@ def self_refine(question: str, num_refine: int = 1):
         critique = r2["text"].strip()
 
         r3 = call_model_chat_completions(
-            system="You are a helpful assistant. You make a new final answer considering the previous answer and critique.",
+            system="You are a very smart model. You make a new final answer considering the previous answer and critique.Take a deep breath",
             prompt=f"""
             Question:
             {question}
@@ -375,7 +375,7 @@ def self_refine(question: str, num_refine: int = 1):
             Critique:
             {critique}
 
-            Create a new final answer. Reply with a sentence.
+            Create a new final answer.Reply with Final answer: <your answer>
             """
         )
         if not r3["ok"]:
@@ -383,7 +383,7 @@ def self_refine(question: str, num_refine: int = 1):
         reasoning = r3["text"].strip()
         answer = _strip_answer_markers(reasoning)
 
-    return {"reasoning": reasoning, "answer": answer}
+    return answer
 
 def least_to_most(question: str, max_steps: int = 5):
     r1 = call_model_chat_completions(
