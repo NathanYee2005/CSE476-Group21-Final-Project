@@ -470,7 +470,7 @@ def agent(question):
         return least_to_most(question)
     if label == "verify":
         return react(question, TOOLS)
-    return cot(question)["answer"]
+    return self_refine(question)
 
 
 def main():
